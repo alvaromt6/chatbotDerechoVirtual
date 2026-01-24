@@ -39,9 +39,7 @@ export async function POST(req: Request) {
                 { role: 'user', content: message },
             ],
             temperature: 0.4,       // Creatividad baja: respuestas más precisas y predecibles
-            max_tokens: 400,        // Límite de longitud: evita respuestas demasiado largas o divagaciones
-            top_p: 0.9,             // Diversidad cuidada: considera solo el 90% de las palabras más probables
-            frequency_penalty: 0.5, // Reducción de repetición: obliga a la IA a usar un vocabulario más variado
+
         })
 
         const aiMessage = response.choices[0].message.content

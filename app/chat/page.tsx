@@ -5,6 +5,8 @@ import { createClient } from '@/app/lib/supabase/client'
 import { GraduationCap, LogOut, Send, User } from 'lucide-react'
 import { signOut } from '@/app/lib/auth-actions'
 import { ThemeToggle } from '@/app/components/ThemeToggle'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 /**
  * Interfaz para definir la estructura de un mensaje en el chat.
@@ -157,7 +159,20 @@ export default function ChatPage() {
                             className={`max-w-[85%] p-4 shadow-sm text-sm sm:text-base ${msg.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'
                                 }`}
                         >
-                            <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                            <div className="prose dark:prose-invert max-w-none break-words">
+                                <ReactMarkdown
+                                    remarkPlugins={[remarkGfm]}
+                                    components={{
+                                        p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
+                                        ul: ({ node, ...props }) => <ul className="list-disc ml-4 mb-2" {...props} />,
+                                        ol: ({ node, ...props }) => <ol className="list-decimal ml-4 mb-2" {...props} />,
+                                        li: ({ node, ...props }) => <li className="mb-1" {...props} />,
+                                        strong: ({ node, ...props }) => <strong className="font-bold text-blue-900 dark:text-blue-300" {...props} />
+                                    }}
+                                >
+                                    {msg.content}
+                                </ReactMarkdown>
+                            </div>
                         </div>
                     </div>
                 ))}
