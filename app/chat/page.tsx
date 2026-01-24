@@ -37,6 +37,7 @@ export default function ChatPage() {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null)
     const chunksRef = useRef<Blob[]>([])
     const recordingStartTimeRef = useRef<number | null>(null)
+    const abortControllerRef = useRef<AbortController | null>(null) // Para detener la generación
     const supabase = createClient()                        // Cliente de Supabase (frontend)
 
     /**
@@ -131,10 +132,18 @@ export default function ChatPage() {
         setLoading(true)
 
         try {
+            // Cancelar petición anterior si existe
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort()
+            }
+            const abortController = new AbortController()
+            abortControllerRef.current = abortController
+
             // Llamada a nuestra API de OpenAI
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: abortController.signal,
                 body: JSON.stringify({
                     message: text,
                     history: messages,
@@ -147,9 +156,25 @@ export default function ChatPage() {
                 // Añadir respuesta de la IA a la lista visual
                 setMessages((prev) => [...prev, { role: 'assistant', content: data.reply }])
             }
-        } catch (error) {
-            console.error('Error al enviar mensaje:', error)
+        } catch (error: any) {
+            if (error.name === 'AbortError') {
+                console.log('Generación detenida por el usuario')
+            } else {
+                console.error('Error al enviar mensaje:', error)
+            }
         } finally {
+            setLoading(false)
+            abortControllerRef.current = null
+        }
+    }
+
+    /**
+     * FUNCIÓN: Detener generación de respuesta
+     */
+    const stopGeneration = () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort()
+            abortControllerRef.current = null
             setLoading(false)
         }
     }
@@ -268,12 +293,19 @@ export default function ChatPage() {
 
                 {/* Animación de carga (escribiendo...) */}
                 {loading && (
-                    <div className="flex justify-start">
+                    <div className="flex justify-start items-center gap-2">
                         <div className="chat-bubble-ai p-4 flex gap-1">
                             <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce"></div>
                             <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce [animation-delay:-.3s]"></div>
                             <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce [animation-delay:-.5s]"></div>
                         </div>
+                        <button
+                            onClick={stopGeneration}
+                            className="p-2 text-slate-400 hover:text-red-500 transition-colors"
+                            title="Detener generación"
+                        >
+                            <Square className="w-4 h-4 fill-current" />
+                        </button>
                     </div>
                 )}
                 {/* Elemento invisible para asegurar que el scroll llegue al final */}
