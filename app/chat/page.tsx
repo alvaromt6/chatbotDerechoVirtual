@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/app/lib/supabase/client'
-import { GraduationCap, LogOut, Send, User } from 'lucide-react'
+import { GraduationCap, LogOut, Send, User, Mic, Square, Loader2 } from 'lucide-react'
 import { signOut } from '@/app/lib/auth-actions'
 import { ThemeToggle } from '@/app/components/ThemeToggle'
 import ReactMarkdown from 'react-markdown'
@@ -27,8 +27,15 @@ export default function ChatPage() {
     const [loading, setLoading] = useState(false)          // Estado de carga (esperando respuesta de IA)
     const [user, setUser] = useState<any>(null)           // Información del usuario logueado
 
+    // ESTADOS PARA AUDIO
+    const [isRecording, setIsRecording] = useState(false)
+    const [isTranscribing, setIsTranscribing] = useState(false)
+
     // REFERENCIAS
     const messagesEndRef = useRef<HTMLDivElement>(null)    // Referencia para scroll automático al final
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+    const chunksRef = useRef<Blob[]>([])
+    const recordingStartTimeRef = useRef<number | null>(null)
     const supabase = createClient()                        // Cliente de Supabase (frontend)
 
     /**
@@ -63,20 +70,63 @@ export default function ChatPage() {
     }, [messages])
 
     /**
-     * FUNCIÓN: Enviar un mensaje.
-     * 1. Actualiza la UI localmente con el mensaje del usuario.
-     * 2. Envía el mensaje a la API /api/chat.
-     * 3. Recibe y muestra la respuesta de la IA.
+     * FUNCIÓN: Iniciar grabación de audio
      */
-    const handleSend = async (e: React.FormEvent) => {
-        e.preventDefault()
-        if (!input.trim() || loading) return
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            const mediaRecorder = new MediaRecorder(stream)
+            mediaRecorderRef.current = mediaRecorder
+            chunksRef.current = []
 
-        const userMessage = input
-        setInput('')
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) {
+                    chunksRef.current.push(e.data)
+                }
+            }
+
+            mediaRecorder.onstop = async () => {
+                const duration = Date.now() - (recordingStartTimeRef.current || 0)
+
+                // Detener todos los tracks del stream para apagar el micrófono
+                stream.getTracks().forEach(track => track.stop())
+
+                if (duration < 1000) {
+                    // alert('Grabación muy corta. Mantén presionado o habla más tiempo.')
+                    return
+                }
+
+                const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' })
+                await handleTranscribe(audioBlob)
+            }
+
+            mediaRecorder.start()
+            recordingStartTimeRef.current = Date.now()
+            setIsRecording(true)
+        } catch (err) {
+            console.error('Error al acceder al micrófono:', err)
+            alert('No se pudo acceder al micrófono. Por favor, verifica los permisos.')
+        }
+    }
+
+    /**
+     * FUNCIÓN: Detener grabación
+     */
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && isRecording) {
+            mediaRecorderRef.current.stop()
+            setIsRecording(false)
+        }
+    }
+
+    /**
+     * FUNCIÓN: Enviar mensaje a la API
+     */
+    const sendMessage = async (text: string) => {
+        if (!text.trim() || loading) return
 
         // Añadir mensaje del usuario a la lista visual inmediatamente
-        setMessages((prev) => [...prev, { role: 'user', content: userMessage }])
+        setMessages((prev) => [...prev, { role: 'user', content: text }])
         setLoading(true)
 
         try {
@@ -85,7 +135,7 @@ export default function ChatPage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    message: userMessage,
+                    message: text,
                     history: messages,
                     studentName: user?.user_metadata?.full_name,
                 }),
@@ -101,6 +151,44 @@ export default function ChatPage() {
         } finally {
             setLoading(false)
         }
+    }
+
+    /**
+     * FUNCIÓN: Transcribir audio
+     */
+    const handleTranscribe = async (audioBlob: Blob) => {
+        setIsTranscribing(true)
+        try {
+            const formData = new FormData()
+            formData.append('file', audioBlob, 'recording.webm')
+
+            const response = await fetch('/api/transcribe', {
+                method: 'POST',
+                body: formData,
+            })
+
+            const data = await response.json()
+            if (data.text) {
+                // AUTO-SEND: Enviar directamente la transcripción
+                await sendMessage(data.text)
+            } else if (data.error) {
+                console.error('Error de transcripción:', data.error)
+            }
+        } catch (error) {
+            console.error('Error enviando audio:', error)
+        } finally {
+            setIsTranscribing(false)
+        }
+    }
+
+    /**
+     * FUNCIÓN: Manejador del form submit
+     */
+    const handleSend = async (e: React.FormEvent) => {
+        e.preventDefault()
+        const text = input
+        setInput('')
+        await sendMessage(text)
     }
 
     return (
@@ -195,18 +283,40 @@ export default function ChatPage() {
             <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 transition-colors">
                 <form
                     onSubmit={handleSend}
-                    className="max-w-4xl mx-auto relative flex items-center"
+                    className="max-w-4xl mx-auto relative flex items-center gap-2"
                 >
+                    {/* Botón de Micrófono */}
+                    <button
+                        type="button"
+                        onClick={isRecording ? stopRecording : startRecording}
+                        className={`p-3 rounded-xl transition-all ${isRecording
+                            ? 'bg-red-500 text-white animate-pulse cursor-pointer'
+                            : isTranscribing
+                                ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-wait'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer'
+                            }`}
+                        disabled={isTranscribing || loading}
+                        title={isRecording ? "Detener grabación" : "Grabar audio"}
+                    >
+                        {isRecording ? (
+                            <Square className="w-5 h-5 fill-current" />
+                        ) : isTranscribing ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                            <Mic className="w-5 h-5" />
+                        )}
+                    </button>
+
                     <input
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        disabled={loading}
-                        placeholder="Escribe tu duda legal aquí..."
+                        disabled={loading || isRecording}
+                        placeholder={isRecording ? "Escuchando..." : isTranscribing ? "Transcribiendo..." : "Escribe o graba tu duda..."}
                         className="w-full bg-slate-100 dark:bg-slate-800 border border-transparent focus:border-blue-300 focus:bg-white dark:focus:bg-slate-700 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/20 rounded-2xl py-3 pl-4 pr-14 outline-none transition-all placeholder:text-slate-400 text-slate-900 dark:text-slate-100"
                     />
                     <button
                         type="submit"
-                        disabled={!input.trim() || loading}
+                        disabled={!input.trim() || loading || isRecording || isTranscribing}
                         className="absolute right-2 p-2 bg-blue-900 text-white rounded-xl hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <Send className="w-5 h-5" />
