@@ -7,6 +7,7 @@ import { signOut } from '@/app/lib/auth-actions'
 import { ThemeToggle } from '@/app/components/ThemeToggle'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import TextareaAutosize from 'react-textarea-autosize'
 
 /**
  * Interfaz para definir la estructura de un mensaje en el chat.
@@ -307,17 +308,28 @@ export default function ChatPage() {
                         )}
                     </button>
 
-                    <input
+
+                    <TextareaAutosize
+                        minRows={1}
+                        maxRows={5}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault()
+                                if (input.trim() && !loading && !isRecording && !isTranscribing) {
+                                    handleSend(e as any)
+                                }
+                            }
+                        }}
                         disabled={loading || isRecording}
-                        placeholder={isRecording ? "Escuchando..." : isTranscribing ? "Transcribiendo..." : "Escribe o graba tu duda..."}
-                        className="w-full bg-slate-100 dark:bg-slate-800 border border-transparent focus:border-blue-300 focus:bg-white dark:focus:bg-slate-700 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/20 rounded-2xl py-3 pl-4 pr-14 outline-none transition-all placeholder:text-slate-400 text-slate-900 dark:text-slate-100"
+                        placeholder={isRecording ? "Escuchando..." : isTranscribing ? "Transcribiendo..." : "Escribe o graba tu duda legal..."}
+                        className="w-full bg-slate-100 dark:bg-slate-800 border border-transparent focus:border-blue-300 focus:bg-white dark:focus:bg-slate-700 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/20 rounded-2xl py-3 pl-4 pr-14 outline-none transition-all placeholder:text-slate-400 text-slate-900 dark:text-slate-100 resize-none overflow-hidden"
                     />
                     <button
                         type="submit"
                         disabled={!input.trim() || loading || isRecording || isTranscribing}
-                        className="absolute right-2 p-2 bg-blue-900 text-white rounded-xl hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="absolute right-2 bottom-2 p-2 bg-blue-900 text-white rounded-xl hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <Send className="w-5 h-5" />
                     </button>
