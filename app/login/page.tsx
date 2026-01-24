@@ -34,7 +34,7 @@ export default function LoginPage() {
                     <div className="bg-blue-900 p-3 rounded-xl mb-4">
                         <GraduationCap className="w-8 h-8 text-white" />
                     </div>
-                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">IurisTutor AI</h1>
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Alvaro TutorAI</h1>
                     <p className="text-slate-500 dark:text-slate-400 text-sm">El futuro del aprendizaje jurídico</p>
                 </div>
 
@@ -76,7 +76,7 @@ export default function LoginPage() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full bg-blue-900 hover:bg-blue-800 text-white font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full bg-blue-900 hover:bg-blue-800 text-white font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                     >
                         {loading ? 'Entrando...' : 'Iniciar Sesión'}
                     </button>
