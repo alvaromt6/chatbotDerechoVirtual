@@ -17,12 +17,21 @@ interface Message {
     content: string
 }
 
+const SUGGESTIONS = [
+    "¿Qué es el Habeas Corpus?",
+    "Diferencia entre culpa y dolo",
+    "Explícame el caso Marbury vs Madison",
+    "Estudiar con método Feynman"
+]
+
 /**
  * Página principal del Chat: Gestiona la interfaz de mensajería, el historial
  * y la comunicación con la API de IA.
  */
 export default function ChatPage() {
-    // ESTADOS
+    // -----------------------------------------------------------------------
+    // 1. ESTADOS (STATES)
+    // -----------------------------------------------------------------------
     const [messages, setMessages] = useState<Message[]>([]) // Historial de mensajes en pantalla
     const [input, setInput] = useState('')                 // Texto actual en el campo de entrada
     const [loading, setLoading] = useState(false)          // Estado de carga (esperando respuesta de IA)
@@ -32,13 +41,20 @@ export default function ChatPage() {
     const [isRecording, setIsRecording] = useState(false)
     const [isTranscribing, setIsTranscribing] = useState(false)
 
-    // REFERENCIAS
+    // -----------------------------------------------------------------------
+    // 2. REFERENCIAS (REFS)
+    // -----------------------------------------------------------------------
     const messagesEndRef = useRef<HTMLDivElement>(null)    // Referencia para scroll automático al final
     const mediaRecorderRef = useRef<MediaRecorder | null>(null)
     const chunksRef = useRef<Blob[]>([])
     const recordingStartTimeRef = useRef<number | null>(null)
-    const abortControllerRef = useRef<AbortController | null>(null) // Para detener la generación
     const supabase = createClient()                        // Cliente de Supabase (frontend)
+
+    /**
+     * -----------------------------------------------------------------------
+     * 3. EFECTOS (EFFECTS)
+     * -----------------------------------------------------------------------
+     */
 
     /**
      * EFECTO INICIAL: Cargar datos del usuario y su historial de mensajes.
@@ -70,6 +86,12 @@ export default function ChatPage() {
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, [messages])
+
+    /**
+     * -----------------------------------------------------------------------
+     * 4. FUNCIONES DE AUDIO (GRABACIÓN Y TRANSCRIPCIÓN)
+     * -----------------------------------------------------------------------
+     */
 
     /**
      * FUNCIÓN: Iniciar grabación de audio
@@ -122,64 +144,6 @@ export default function ChatPage() {
     }
 
     /**
-     * FUNCIÓN: Enviar mensaje a la API
-     */
-    const sendMessage = async (text: string) => {
-        if (!text.trim() || loading) return
-
-        // Añadir mensaje del usuario a la lista visual inmediatamente
-        setMessages((prev) => [...prev, { role: 'user', content: text }])
-        setLoading(true)
-
-        try {
-            // Cancelar petición anterior si existe
-            if (abortControllerRef.current) {
-                abortControllerRef.current.abort()
-            }
-            const abortController = new AbortController()
-            abortControllerRef.current = abortController
-
-            // Llamada a nuestra API de OpenAI
-            const response = await fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                signal: abortController.signal,
-                body: JSON.stringify({
-                    message: text,
-                    history: messages,
-                    studentName: user?.user_metadata?.full_name,
-                }),
-            })
-
-            const data = await response.json()
-            if (data.reply) {
-                // Añadir respuesta de la IA a la lista visual
-                setMessages((prev) => [...prev, { role: 'assistant', content: data.reply }])
-            }
-        } catch (error: any) {
-            if (error.name === 'AbortError') {
-                console.log('Generación detenida por el usuario')
-            } else {
-                console.error('Error al enviar mensaje:', error)
-            }
-        } finally {
-            setLoading(false)
-            abortControllerRef.current = null
-        }
-    }
-
-    /**
-     * FUNCIÓN: Detener generación de respuesta
-     */
-    const stopGeneration = () => {
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort()
-            abortControllerRef.current = null
-            setLoading(false)
-        }
-    }
-
-    /**
      * FUNCIÓN: Transcribir audio
      */
     const handleTranscribe = async (audioBlob: Blob) => {
@@ -208,17 +172,86 @@ export default function ChatPage() {
     }
 
     /**
+     * -----------------------------------------------------------------------
+     * 5. LÓGICA DE ENVÍO Y STREAMING
+     * -----------------------------------------------------------------------
+     */
+
+    /**
+     * FUNCIÓN: Enviar mensaje a la API y manejar la respuesta en STREAMING
+     */
+    const sendMessage = async (text: string) => {
+        if (!text.trim() || loading) return
+
+        // Añadir mensaje del usuario a la lista visual inmediatamente
+        setMessages((prev) => [...prev, { role: 'user', content: text }])
+        setLoading(true)
+        setInput('') // Limpiar input aquí para mejor UX
+
+        try {
+            // Llamada a nuestra API de OpenAI
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: text,
+                    history: messages,
+                    studentName: user?.user_metadata?.full_name,
+                }),
+            })
+
+            if (!response.ok) throw new Error(response.statusText)
+
+            // Streaming Logic
+            const reader = response.body?.getReader()
+            const decoder = new TextDecoder()
+            let aiResponse = ''
+
+            // Añadir placeholder vacío para la respuesta de la IA
+            setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
+
+            if (reader) {
+                while (true) {
+                    const { done, value } = await reader.read()
+                    if (done) break
+
+                    const chunk = decoder.decode(value, { stream: true })
+                    aiResponse += chunk
+
+                    // Actualizar el último mensaje (el de la IA) con el texto acumulado
+                    setMessages((prev) => {
+                        const newMessages = [...prev]
+                        const lastMsg = newMessages[newMessages.length - 1]
+                        if (lastMsg.role === 'assistant') {
+                            lastMsg.content = aiResponse
+                        }
+                        return newMessages
+                    })
+                }
+            }
+
+        } catch (error: any) {
+            console.error('Error al enviar mensaje:', error)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    /**
      * FUNCIÓN: Manejador del form submit
      */
     const handleSend = async (e: React.FormEvent) => {
         e.preventDefault()
         const text = input
-        setInput('')
+        // setInput('') // Se hace dentro de sendMessage para mejor estado
         await sendMessage(text)
     }
 
     return (
         <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-900 transition-colors">
+            {/* -----------------------------------------------------------------------
+                6. RENDERIZADO DE LA INTERFAZ
+               ----------------------------------------------------------------------- */}
 
             {/* CABECERA: Logo, Nombre del bot, Selector de tema y Usuario */}
             <header className="h-16 glass-card flex items-center justify-between px-6 sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
@@ -260,6 +293,19 @@ export default function ChatPage() {
                                 Soy tu tutor de Derecho. ¿Qué tema legal te gustaría explorar hoy? Podemos repasar conceptos, analizar casos o aplicar el método Feynman.
                             </p>
                         </div>
+
+                        {/* Chips de sugerencias */}
+                        <div className="flex flex-wrap gap-2 justify-center max-w-lg">
+                            {SUGGESTIONS.map((text, i) => (
+                                <button
+                                    key={i}
+                                    onClick={() => sendMessage(text)}
+                                    className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-sm text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-slate-700 hover:border-blue-200 dark:hover:border-slate-600 transition-all shadow-sm"
+                                >
+                                    {text}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 )}
 
@@ -299,13 +345,6 @@ export default function ChatPage() {
                             <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce [animation-delay:-.3s]"></div>
                             <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce [animation-delay:-.5s]"></div>
                         </div>
-                        <button
-                            onClick={stopGeneration}
-                            className="p-2 text-slate-400 hover:text-red-500 transition-colors"
-                            title="Detener generación"
-                        >
-                            <Square className="w-4 h-4 fill-current" />
-                        </button>
                     </div>
                 )}
                 {/* Elemento invisible para asegurar que el scroll llegue al final */}
