@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/app/lib/supabase/client'
-import { GraduationCap, LogOut, Send, User, Mic, Square, Loader2 } from 'lucide-react'
+import { GraduationCap, LogOut, Send, User, Mic, Square, Loader2, Menu } from 'lucide-react'
 import { signOut } from '@/app/lib/auth-actions'
 import { ThemeToggle } from '@/app/components/ThemeToggle'
 import ReactMarkdown from 'react-markdown'
@@ -10,6 +10,7 @@ import remarkGfm from 'remark-gfm'
 import TextareaAutosize from 'react-textarea-autosize'
 import jsPDF from 'jspdf'
 import { FileDown } from 'lucide-react'
+import { ChatSidebar } from '@/app/components/ChatSidebar'
 
 /**
  * Interfaz para definir la estructura de un mensaje en el chat.
@@ -17,6 +18,12 @@ import { FileDown } from 'lucide-react'
 interface Message {
     role: 'user' | 'assistant'
     content: string
+}
+
+interface Conversation {
+    id: number
+    title: string | null
+    created_at: string
 }
 
 const SUGGESTIONS = [
@@ -39,6 +46,11 @@ export default function ChatPage() {
     const [loading, setLoading] = useState(false)          // Estado de carga (esperando respuesta de IA)
     const [user, setUser] = useState<any>(null)           // Información del usuario logueado
 
+    // ESTADOS PARA CONVERSACIONES
+    const [conversations, setConversations] = useState<Conversation[]>([])
+    const [currentConversationId, setCurrentConversationId] = useState<number | null>(null)
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+
     // ESTADOS PARA AUDIO
     const [isRecording, setIsRecording] = useState(false)
     const [isTranscribing, setIsTranscribing] = useState(false)
@@ -59,28 +71,53 @@ export default function ChatPage() {
      */
 
     /**
-     * EFECTO INICIAL: Cargar datos del usuario y su historial de mensajes.
+     * EFECTO INICIAL: Cargar datos del usuario y sus conversaciones.
      */
     useEffect(() => {
-        const getUser = async () => {
+        const getUserAndConversations = async () => {
             const { data: { user } } = await supabase.auth.getUser()
             setUser(user)
 
-            // Cargar historial de la base de datos si el usuario existe
             if (user) {
                 const { data, error } = await supabase
-                    .from('messages')
-                    .select('role, content')
+                    .from('conversations')
+                    .select('*')
                     .eq('user_id', user.id)
-                    .order('created_at', { ascending: true })
+                    .order('created_at', { ascending: false })
 
                 if (data && !error) {
-                    setMessages(data as Message[])
+                    setConversations(data as Conversation[])
+                    // Opcional: Cargar la última conversación automáticamente o dejar en "New Chat"
+                    // Por ahora dejamos en "New Chat" (null)
                 }
             }
         }
-        getUser()
+        getUserAndConversations()
     }, [])
+
+    /**
+     * EFECTO: Cargar mensajes cuando cambia la conversación seleccionada.
+     */
+    useEffect(() => {
+        const loadMessages = async () => {
+            if (!currentConversationId || !user) {
+                setMessages([])
+                return
+            }
+
+            const { data, error } = await supabase
+                .from('messages')
+                .select('role, content')
+                .eq('conversation_id', currentConversationId)
+                .order('created_at', { ascending: true })
+
+            if (data && !error) {
+                setMessages(data as Message[])
+            }
+        }
+        loadMessages()
+    }, [currentConversationId, user])
+
 
     /**
      * EFECTO: Hacer scroll automático hacia abajo cada vez que hay un nuevo mensaje.
@@ -91,7 +128,38 @@ export default function ChatPage() {
 
     /**
      * -----------------------------------------------------------------------
-     * 4. FUNCIONES DE AUDIO (GRABACIÓN Y TRANSCRIPCIÓN)
+     * 4. GESTIÓN DE CONVERSACIONES
+     * -----------------------------------------------------------------------
+     */
+
+    const handleNewChat = () => {
+        setCurrentConversationId(null)
+        setMessages([])
+        setIsSidebarOpen(false) // Cerrar sidebar en móvil al crear nuevo chat
+    }
+
+    const handleSelectConversation = (id: number) => {
+        setCurrentConversationId(id)
+        setIsSidebarOpen(false) // Cerrar sidebar en móvil al seleccionar
+    }
+
+    const handleDeleteConversation = async (id: number) => {
+        if (!confirm('¿Estás seguro de que quieres eliminar esta conversación?')) return
+
+        const { error } = await supabase.from('conversations').delete().eq('id', id)
+
+        if (!error) {
+            setConversations(prev => prev.filter(c => c.id !== id))
+            if (currentConversationId === id) {
+                handleNewChat()
+            }
+        }
+    }
+
+
+    /**
+     * -----------------------------------------------------------------------
+     * 5. FUNCIONES DE AUDIO (GRABACIÓN Y TRANSCRIPCIÓN)
      * -----------------------------------------------------------------------
      */
 
@@ -175,7 +243,7 @@ export default function ChatPage() {
 
     /**
      * -----------------------------------------------------------------------
-     * 5. LÓGICA DE ENVÍO Y STREAMING
+     * 6. LÓGICA DE ENVÍO Y STREAMING
      * -----------------------------------------------------------------------
      */
 
@@ -183,7 +251,31 @@ export default function ChatPage() {
      * FUNCIÓN: Enviar mensaje a la API y manejar la respuesta en STREAMING
      */
     const sendMessage = async (text: string) => {
-        if (!text.trim() || loading) return
+        if (!text.trim() || loading || !user) return
+
+        let activeConversationId = currentConversationId
+
+        // Si es un nuevo chat, creamos la conversación primero
+        if (!activeConversationId) {
+            const title = text.split(' ').slice(0, 6).join(' ') || 'New Chat';
+            const { data, error } = await supabase
+                .from('conversations')
+                .insert({
+                    title: title,
+                    user_id: user.id
+                })
+                .select()
+                .single()
+
+            if (data && !error) {
+                activeConversationId = data.id
+                setCurrentConversationId(data.id)
+                setConversations(prev => [data, ...prev])
+            } else {
+                console.error('Error creando conversación:', error)
+                return // Si falla la creación, no enviamos mensaje
+            }
+        }
 
         // Añadir mensaje del usuario a la lista visual inmediatamente
         setMessages((prev) => [...prev, { role: 'user', content: text }])
@@ -197,8 +289,9 @@ export default function ChatPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     message: text,
-                    history: messages,
+                    history: messages, // Nota: esto envía todo el historial actual. Idealmente debería ser el de la conversación.
                     studentName: user?.user_metadata?.full_name,
+                    conversationId: activeConversationId
                 }),
             })
 
@@ -349,185 +442,214 @@ export default function ChatPage() {
     }
 
     return (
-        <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-900 transition-colors">
+        <div className="flex h-screen bg-slate-50 dark:bg-slate-900 overflow-hidden">
             {/* -----------------------------------------------------------------------
-                6. RENDERIZADO DE LA INTERFAZ
+                7. SIDEBAR INTEGRATION
                ----------------------------------------------------------------------- */}
+            <ChatSidebar
+                conversations={conversations}
+                currentId={currentConversationId}
+                onSelect={handleSelectConversation}
+                onNewChat={handleNewChat}
+                onDelete={handleDeleteConversation}
+                isOpen={isSidebarOpen}
+                onClose={() => setIsSidebarOpen(false)}
+            />
 
-            {/* CABECERA: Logo, Nombre del bot, Selector de tema y Usuario */}
-            <header className="h-16 glass-card flex items-center justify-between px-6 sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
-                <div className="flex items-center gap-2">
-                    <div className="bg-blue-900 p-2 rounded-lg text-white">
-                        <GraduationCap className="w-5 h-5" />
-                    </div>
-                    <span className="font-bold text-slate-900 dark:text-white hidden sm:inline">Alvaro TutorAI</span>
-                </div>
+            {/* CONTENIDO PRINCIPAL */}
+            <div className="flex-1 flex flex-col h-full relative w-full transition-all duration-300 ease-in-out">
 
-                <div className="flex items-center gap-4">
-                    <ThemeToggle />
-                    {/* Badge de Usuario */}
-                    <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 py-1.5 px-3 rounded-full">
-                        <User className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                        <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                            {user?.user_metadata?.full_name || 'Estudiante'}
-                        </span>
-                    </div>
-                    {/* Botón de Salir */}
-                    <button
-                        onClick={() => signOut()}
-                        className="p-2 text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
-                        title="Cerrar sesión"
-                    >
-                        <LogOut className="w-5 h-5" />
-                    </button>
-                </div>
-            </header>
-
-            {/* ÁREA DE MENSAJES: Renderiza la conversación */}
-            <main className="flex-1 overflow-y-auto p-4 space-y-4 max-w-4xl w-full mx-auto scroll-smooth">
-                {/* Pantalla de bienvenida si no hay mensajes */}
-                {messages.length === 0 && (
-                    <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-4">
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-700 max-w-md transition-colors">
-                            <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100 mb-2">¡Hola, {user?.user_metadata?.full_name}! 👋</h2>
-                            <p className="text-slate-500 dark:text-slate-400 italic">
-                                Soy tu tutor de Derecho. ¿Qué tema legal te gustaría explorar hoy? Podemos repasar conceptos, analizar casos o aplicar el método Feynman.
-                            </p>
-                        </div>
-
-                        {/* Chips de sugerencias */}
-                        <div className="flex flex-wrap gap-2 justify-center max-w-lg">
-                            {SUGGESTIONS.map((text, i) => (
-                                <button
-                                    key={i}
-                                    onClick={() => sendMessage(text)}
-                                    className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-sm text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-slate-700 hover:border-blue-200 dark:hover:border-slate-600 transition-all shadow-sm"
-                                >
-                                    {text}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Lista de burbujas de chat */}
-                {messages.map((msg, i) => (
-                    <div
-                        key={i}
-                        className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                    >
-                        <div
-                            className={`max-w-[85%] p-4 shadow-sm text-sm sm:text-base ${msg.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'
-                                }`}
+                {/* CABECERA: Logo, Nombre del bot, Selector de tema y Usuario */}
+                <header className="h-16 glass-card flex items-center justify-between px-4 sm:px-6 sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800 shrink-0">
+                    <div className="flex items-center gap-2">
+                        {/* Botón menú móvil */}
+                        <button
+                            onClick={() => setIsSidebarOpen(true)}
+                            className="lg:hidden p-2 -ml-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                         >
-                            <div className="prose dark:prose-invert max-w-none break-words">
-                                <ReactMarkdown
-                                    remarkPlugins={[remarkGfm]}
-                                    components={{
-                                        p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
-                                        ul: ({ node, ...props }) => <ul className="list-disc ml-4 mb-2" {...props} />,
-                                        ol: ({ node, ...props }) => <ol className="list-decimal ml-4 mb-2" {...props} />,
-                                        li: ({ node, ...props }) => <li className="mb-1" {...props} />,
-                                        strong: ({ node, ...props }) => <strong className="font-bold text-blue-900 dark:text-blue-300" {...props} />
-                                    }}
-                                >
-                                    {msg.content}
-                                </ReactMarkdown>
+                            <Menu className="w-6 h-6" />
+                        </button>
+
+                        <div className="bg-blue-900 p-2 rounded-lg text-white">
+                            <GraduationCap className="w-5 h-5" />
+                        </div>
+                        <span className="font-bold text-slate-900 dark:text-white hidden sm:inline">Alvaro TutorAI</span>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                        <ThemeToggle />
+                        {/* Badge de Usuario */}
+                        <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 py-1.5 px-3 rounded-full hidden sm:flex">
+                            <User className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                {user?.user_metadata?.full_name || 'Estudiante'}
+                            </span>
+                        </div>
+                        {/* Botón de Salir */}
+                        <button
+                            onClick={() => signOut()}
+                            className="p-2 text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
+                            title="Cerrar sesión"
+                            type="button"
+                        >
+                            <LogOut className="w-5 h-5" />
+                        </button>
+                    </div>
+                </header>
+
+                {/* ÁREA DE MENSAJES: Renderiza la conversación */}
+                <main className="flex-1 overflow-y-auto p-4 space-y-4 w-full mx-auto scroll-smooth">
+                    {/* Pantalla de bienvenida si no hay mensajes */}
+                    {messages.length === 0 && (
+                        <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-4">
+                            <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-700 max-w-md transition-colors">
+                                <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100 mb-2">
+                                    {currentConversationId ? 'Conversación vacía' : `¡Hola, ${user?.user_metadata?.full_name || 'Estudiante'}! 👋`}
+                                </h2>
+                                <p className="text-slate-500 dark:text-slate-400 italic">
+                                    {currentConversationId
+                                        ? 'Empieza escribiendo tu duda legal.'
+                                        : 'Soy tu tutor de Derecho. ¿Qué tema legal te gustaría explorar hoy? Podemos repasar conceptos, analizar casos o aplicar el método Feynman.'
+                                    }
+                                </p>
                             </div>
 
-                            {/* Botón de Descargar PDF (Solo para el asistente) */}
-                            {msg.role === 'assistant' && (
-                                <button
-                                    onClick={() => generatePDF(msg.content)}
-                                    className="mt-2 text-xs flex items-center gap-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                                    title="Descargar resumen en PDF"
-                                >
-                                    <FileDown className="w-4 h-4" />
-                                    <span>Descargar PDF</span>
-                                </button>
+                            {/* Chips de sugerencias (solo en new chat) */}
+                            {!currentConversationId && (
+                                <div className="flex flex-wrap gap-2 justify-center max-w-lg">
+                                    {SUGGESTIONS.map((text, i) => (
+                                        <button
+                                            key={i}
+                                            onClick={() => sendMessage(text)}
+                                            className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-sm text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-slate-700 hover:border-blue-200 dark:hover:border-slate-600 transition-all shadow-sm"
+                                        >
+                                            {text}
+                                        </button>
+                                    ))}
+                                </div>
                             )}
                         </div>
-                    </div>
-                ))}
+                    )}
 
-                {/* Animación de carga (escribiendo...) */}
-                {loading && (
-                    <div className="flex justify-start items-center gap-2">
-                        <div className="chat-bubble-ai p-4 flex gap-1">
-                            <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce"></div>
-                            <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce [animation-delay:-.3s]"></div>
-                            <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce [animation-delay:-.5s]"></div>
-                        </div>
-                    </div>
-                )}
-                {/* Elemento invisible para asegurar que el scroll llegue al final */}
-                <div ref={messagesEndRef} />
-            </main>
+                    {/* Lista de burbujas de chat */}
+                    {messages.map((msg, i) => (
+                        <div
+                            key={i}
+                            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                        >
+                            <div
+                                className={`max-w-[85%] md:max-w-[75%] p-4 shadow-sm text-sm sm:text-base ${msg.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'
+                                    }`}
+                            >
+                                <div className="prose dark:prose-invert max-w-none break-words">
+                                    <ReactMarkdown
+                                        remarkPlugins={[remarkGfm]}
+                                        components={{
+                                            p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
+                                            ul: ({ node, ...props }) => <ul className="list-disc ml-4 mb-2" {...props} />,
+                                            ol: ({ node, ...props }) => <ol className="list-decimal ml-4 mb-2" {...props} />,
+                                            li: ({ node, ...props }) => <li className="mb-1" {...props} />,
+                                            strong: ({ node, ...props }) => <strong className="font-bold text-blue-900 dark:text-blue-300" {...props} />
+                                        }}
+                                    >
+                                        {msg.content}
+                                    </ReactMarkdown>
+                                </div>
 
-            {/* ÁREA DE ENTRADA: Input de texto y botón de envío */}
-            <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 transition-colors">
-                <form
-                    onSubmit={handleSend}
-                    className="max-w-4xl mx-auto relative flex items-center gap-2"
-                >
-                    {/* Botón de Micrófono */}
-                    <button
-                        type="button"
-                        onClick={isRecording ? stopRecording : startRecording}
-                        className={`p-3 rounded-xl transition-all flex items-center justify-center ${isRecording
-                            ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
-                            : isTranscribing
-                                ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-wait'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700'
-                            }`}
-                        style={{ width: '48px', height: '48px' }} // Tamaño fijo para evitar saltos
-                        disabled={isTranscribing || loading}
-                        title={isRecording ? "Detener grabación" : "Grabar audio"}
-                    >
-                        {isRecording ? (
-                            <div className="flex items-end justify-center gap-[2px] h-5 w-5">
-                                <div className="waveform-bar" style={{ animationDelay: '0ms' }}></div>
-                                <div className="waveform-bar" style={{ animationDelay: '200ms', height: '50%' }}></div>
-                                <div className="waveform-bar" style={{ animationDelay: '400ms', height: '80%' }}></div>
-                                <div className="waveform-bar" style={{ animationDelay: '100ms' }}></div>
+                                {/* Botón de Descargar PDF (Solo para el asistente) */}
+                                {msg.role === 'assistant' && (
+                                    <button
+                                        onClick={() => generatePDF(msg.content)}
+                                        className="mt-2 text-xs flex items-center gap-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                                        title="Descargar resumen en PDF"
+                                    >
+                                        <FileDown className="w-4 h-4" />
+                                        <span>Descargar PDF</span>
+                                    </button>
+                                )}
                             </div>
-                        ) : isTranscribing ? (
-                            <Loader2 className="w-5 h-5 animate-spin" />
-                        ) : (
-                            <Mic className="w-5 h-5" />
-                        )}
-                    </button>
+                        </div>
+                    ))}
 
+                    {/* Animación de carga (escribiendo...) */}
+                    {loading && (
+                        <div className="flex justify-start items-center gap-2">
+                            <div className="chat-bubble-ai p-4 flex gap-1">
+                                <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce"></div>
+                                <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce [animation-delay:-.3s]"></div>
+                                <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce [animation-delay:-.5s]"></div>
+                            </div>
+                        </div>
+                    )}
+                    {/* Elemento invisible para asegurar que el scroll llegue al final */}
+                    <div ref={messagesEndRef} />
+                </main>
 
-                    <TextareaAutosize
-                        minRows={1}
-                        maxRows={5}
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault()
-                                if (input.trim() && !loading && !isRecording && !isTranscribing) {
-                                    handleSend(e as any)
-                                }
-                            }
-                        }}
-                        disabled={loading || isRecording}
-                        placeholder={isRecording ? "Escuchando..." : isTranscribing ? "Transcribiendo..." : "Escribe o graba tu duda legal..."}
-                        className="w-full bg-slate-100 dark:bg-slate-800 border border-transparent focus:border-blue-300 focus:bg-white dark:focus:bg-slate-700 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/20 rounded-2xl py-3 pl-4 pr-14 outline-none transition-all placeholder:text-slate-400 text-slate-900 dark:text-slate-100 resize-none overflow-hidden"
-                    />
-                    <button
-                        type="submit"
-                        disabled={!input.trim() || loading || isRecording || isTranscribing}
-                        className="absolute right-2 bottom-2 p-2 bg-blue-900 text-white rounded-xl hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                {/* ÁREA DE ENTRADA: Input de texto y botón de envío */}
+                <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 transition-colors">
+                    <form
+                        onSubmit={handleSend}
+                        className="max-w-4xl mx-auto relative flex items-center gap-2"
                     >
-                        <Send className="w-5 h-5" />
-                    </button>
-                </form>
-                {/* Descargo de responsabilidad */}
-                <p className="text-center text-[10px] text-slate-400 mt-2">
-                    Alvaro TutorAI puede cometer errores. Verifica siempre con fuentes oficiales.
-                </p>
+                        {/* Botón de Micrófono */}
+                        <button
+                            type="button"
+                            onClick={isRecording ? stopRecording : startRecording}
+                            className={`p-3 rounded-xl transition-all flex items-center justify-center ${isRecording
+                                ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
+                                : isTranscribing
+                                    ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-wait'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700'
+                                }`}
+                            style={{ width: '48px', height: '48px' }} // Tamaño fijo para evitar saltos
+                            disabled={isTranscribing || loading}
+                            title={isRecording ? "Detener grabación" : "Grabar audio"}
+                        >
+                            {isRecording ? (
+                                <div className="flex items-end justify-center gap-[2px] h-5 w-5">
+                                    <div className="waveform-bar" style={{ animationDelay: '0ms' }}></div>
+                                    <div className="waveform-bar" style={{ animationDelay: '200ms', height: '50%' }}></div>
+                                    <div className="waveform-bar" style={{ animationDelay: '400ms', height: '80%' }}></div>
+                                    <div className="waveform-bar" style={{ animationDelay: '100ms' }}></div>
+                                </div>
+                            ) : isTranscribing ? (
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                            ) : (
+                                <Mic className="w-5 h-5" />
+                            )}
+                        </button>
+
+
+                        <TextareaAutosize
+                            minRows={1}
+                            maxRows={5}
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault()
+                                    if (input.trim() && !loading && !isRecording && !isTranscribing) {
+                                        handleSend(e as any)
+                                    }
+                                }
+                            }}
+                            disabled={loading || isRecording}
+                            placeholder={isRecording ? "Escuchando..." : isTranscribing ? "Transcribiendo..." : "Escribe o graba tu duda legal..."}
+                            className="w-full bg-slate-100 dark:bg-slate-800 border border-transparent focus:border-blue-300 focus:bg-white dark:focus:bg-slate-700 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/20 rounded-2xl py-3 pl-4 pr-14 outline-none transition-all placeholder:text-slate-400 text-slate-900 dark:text-slate-100 resize-none overflow-hidden"
+                        />
+                        <button
+                            type="submit"
+                            disabled={!input.trim() || loading || isRecording || isTranscribing}
+                            className="absolute right-2 bottom-2 p-2 bg-blue-900 text-white rounded-xl hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <Send className="w-5 h-5" />
+                        </button>
+                    </form>
+                    {/* Descargo de responsabilidad */}
+                    <p className="text-center text-[10px] text-slate-400 mt-2">
+                        Alvaro TutorAI puede cometer errores. Verifica siempre con fuentes oficiales.
+                    </p>
+                </div>
             </div>
         </div>
     )

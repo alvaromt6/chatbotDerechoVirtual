@@ -19,7 +19,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
         }
 
-        const { message, history, studentName } = await req.json()
+        const { message, history, studentName, conversationId } = await req.json()
 
         // -----------------------------------------------------------------------
         // 2. DEFINICIÓN DE LA PERSONALIDAD (SYSTEM PROMPT)
@@ -42,7 +42,12 @@ export async function POST(req: Request) {
         // Guardamos la pregunta del usuario ANTES de generar la respuesta.
         // Esto asegura que si el usuario cancela o cierra, su duda queda registrada.
         await supabase.from('messages').insert([
-            { user_id: user.id, content: message, role: 'user' }
+            {
+                user_id: user.id,
+                content: message,
+                role: 'user',
+                conversation_id: conversationId // Guardamos el ID de la conversación
+            }
         ])
 
         // -----------------------------------------------------------------------
@@ -89,7 +94,12 @@ export async function POST(req: Request) {
                     // Una vez terminado, guardamos la respuesta completa.
                     if (fullResponse) {
                         await supabase.from('messages').insert([
-                            { user_id: user.id, content: fullResponse, role: 'assistant' },
+                            {
+                                user_id: user.id,
+                                content: fullResponse,
+                                role: 'assistant',
+                                conversation_id: conversationId // Guardamos el ID de la conversación
+                            },
                         ])
                     }
                 } catch (err) {
