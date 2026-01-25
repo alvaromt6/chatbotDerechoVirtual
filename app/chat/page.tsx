@@ -8,6 +8,8 @@ import { ThemeToggle } from '@/app/components/ThemeToggle'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import TextareaAutosize from 'react-textarea-autosize'
+import jsPDF from 'jspdf'
+import { FileDown } from 'lucide-react'
 
 /**
  * Interfaz para definir la estructura de un mensaje en el chat.
@@ -238,6 +240,105 @@ export default function ChatPage() {
     }
 
     /**
+     * FUNCIÓN: Generar PDF del mensaje (Mejorado)
+     */
+    const generatePDF = (content: string) => {
+        const doc = new jsPDF()
+        let yPos = 20
+        const pageHeight = doc.internal.pageSize.height
+        const margin = 20
+        const pageWidth = doc.internal.pageSize.width - (margin * 2)
+
+        // Título del Documento
+        doc.setFont("helvetica", "bold")
+        doc.setFontSize(18)
+        doc.setTextColor(26, 54, 93) // Azul oscuro corporativo
+        doc.text("Resumen - Alvaro TutorAI", margin, yPos)
+        yPos += 15
+
+        doc.setLineWidth(0.5)
+        doc.setDrawColor(200, 200, 200)
+        doc.line(margin, yPos - 5, pageWidth + margin, yPos - 5)
+        yPos += 5
+
+        // Procesar línea por línea para "simular" renderizado de Markdown básico
+        const lines = content.split('\n')
+
+        doc.setFont("helvetica", "normal")
+        doc.setTextColor(0, 0, 0)
+
+        lines.forEach((line) => {
+            // Verificar fin de página
+            if (yPos > pageHeight - margin) {
+                doc.addPage()
+                yPos = 20
+            }
+
+            let fontSize = 11
+            let fontStyle = "normal"
+            let text = line.trim() // Eliminamos espacios extra
+
+            // 1. Detectar Títulos (Headers)
+            if (text.startsWith('### ')) {
+                fontSize = 13
+                fontStyle = "bold"
+                text = text.replace('### ', '')
+                yPos += 2
+            } else if (text.startsWith('## ')) {
+                fontSize = 14
+                fontStyle = "bold"
+                text = text.replace('## ', '')
+                doc.setTextColor(44, 82, 130) // Subtítulos en azul
+                yPos += 4
+            } else if (text.startsWith('# ')) {
+                fontSize = 16
+                fontStyle = "bold"
+                text = text.replace('# ', '')
+                doc.setTextColor(26, 54, 93) // Títulos principales en azul oscuro
+                yPos += 6
+            } else {
+                // Texto normal
+                doc.setTextColor(0, 0, 0)
+                // Limpieza básica de Markdown (Negritas y Cursivas simples)
+                // Nota: jsPDF no soporta rich-text inline fácilmente sin librerías extra.
+                // Para simplificar, eliminamos los asteriscos para que se vea limpio.
+                text = text.replace(/\*\*/g, '').replace(/\*/g, '')
+            }
+
+            // Aplicar estilos
+            doc.setFontSize(fontSize)
+            doc.setFont("helvetica", fontStyle)
+
+            // Si la línea está vacía, añadimos un espacio y continuamos
+            if (text === '') {
+                yPos += 5
+                return
+            }
+
+            // Dividir texto para que ajuste al ancho
+            const splitText = doc.splitTextToSize(text, pageWidth)
+
+            // Escribir texto
+            doc.text(splitText, margin, yPos)
+
+            // Calcular nuevo offset Y basado en cuántas líneas ocupó
+            const lineHeight = fontSize * 0.5 // Ajuste aproximado
+            yPos += (splitText.length * lineHeight) + 2 // +2 de padding
+        })
+
+        // Pie de página
+        const pageCount = doc.getNumberOfPages()
+        for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i)
+            doc.setFontSize(9)
+            doc.setTextColor(150)
+            doc.text(`Página ${i} de ${pageCount} - Generado por Alvaro TutorAI`, margin, pageHeight - 10)
+        }
+
+        doc.save("resumen-legal-tutorai.pdf")
+    }
+
+    /**
      * FUNCIÓN: Manejador del form submit
      */
     const handleSend = async (e: React.FormEvent) => {
@@ -333,6 +434,18 @@ export default function ChatPage() {
                                     {msg.content}
                                 </ReactMarkdown>
                             </div>
+
+                            {/* Botón de Descargar PDF (Solo para el asistente) */}
+                            {msg.role === 'assistant' && (
+                                <button
+                                    onClick={() => generatePDF(msg.content)}
+                                    className="mt-2 text-xs flex items-center gap-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                                    title="Descargar resumen en PDF"
+                                >
+                                    <FileDown className="w-4 h-4" />
+                                    <span>Descargar PDF</span>
+                                </button>
+                            )}
                         </div>
                     </div>
                 ))}
@@ -361,17 +474,23 @@ export default function ChatPage() {
                     <button
                         type="button"
                         onClick={isRecording ? stopRecording : startRecording}
-                        className={`p-3 rounded-xl transition-all ${isRecording
-                            ? 'bg-red-500 text-white animate-pulse cursor-pointer'
+                        className={`p-3 rounded-xl transition-all flex items-center justify-center ${isRecording
+                            ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
                             : isTranscribing
                                 ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-wait'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700'
                             }`}
+                        style={{ width: '48px', height: '48px' }} // Tamaño fijo para evitar saltos
                         disabled={isTranscribing || loading}
                         title={isRecording ? "Detener grabación" : "Grabar audio"}
                     >
                         {isRecording ? (
-                            <Square className="w-5 h-5 fill-current" />
+                            <div className="flex items-end justify-center gap-[2px] h-5 w-5">
+                                <div className="waveform-bar" style={{ animationDelay: '0ms' }}></div>
+                                <div className="waveform-bar" style={{ animationDelay: '200ms', height: '50%' }}></div>
+                                <div className="waveform-bar" style={{ animationDelay: '400ms', height: '80%' }}></div>
+                                <div className="waveform-bar" style={{ animationDelay: '100ms' }}></div>
+                            </div>
                         ) : isTranscribing ? (
                             <Loader2 className="w-5 h-5 animate-spin" />
                         ) : (
