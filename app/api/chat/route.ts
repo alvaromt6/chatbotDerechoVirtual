@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createClient } from '@/app/lib/supabase/server'
+import { searchVertexAI, buildVertexContext } from '@/app/lib/vertex-search'
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -51,12 +52,45 @@ export async function POST(req: Request) {
         ])
 
         // -----------------------------------------------------------------------
-        // 4. INICIO DEL STREAMING CON OPENAI
+        // 4. VERTEX AI SEARCH - BÚSQUEDA DE CONTEXTO
+        // -----------------------------------------------------------------------
+        let vertexContext = ''
+
+        try {
+            console.log('🚀 [API] Llamando a Vertex AI con mensaje:', message)
+            const contextText = await searchVertexAI(message)
+
+            if (contextText && contextText.trim()) {
+                console.log(
+                    '📄 [Vertex AI] Contexto encontrado:',
+                    contextText.substring(0, 120) + '...'
+                )
+                vertexContext = buildVertexContext(contextText)
+            } else {
+                console.log('ℹ️ [Vertex AI] Sin resultados relevantes')
+            }
+        } catch (err: any) {
+            console.warn('⚠️ [Vertex AI] Error:', err.message || err)
+        }
+
+        // -----------------------------------------------------------------------
+        // 5. INICIO DEL STREAMING CON OPENAI
         // -----------------------------------------------------------------------
         const stream = await openai.chat.completions.create({
             model: 'gpt-5.2',
             messages: [
                 { role: 'system', content: systemPrompt },
+
+                // Si hay contexto de Vertex AI, lo agregamos como mensaje del sistema
+                ...(vertexContext
+                    ? [
+                        {
+                            role: 'system' as const,
+                            content: vertexContext,
+                        },
+                    ]
+                    : []),
+
                 ...history,
                 { role: 'user', content: message },
             ],
@@ -65,7 +99,7 @@ export async function POST(req: Request) {
         })
 
         // -----------------------------------------------------------------------
-        // 5. PROCESAMIENTO DEL STREAM (RETRANSMISIÓN + GRABACIÓN)
+        // 6. PROCESAMIENTO DEL STREAM (RETRANSMISIÓN + GRABACIÓN)
         // -----------------------------------------------------------------------
         // Creamos un stream personalizado que hace dos cosas a la vez:
         // 1. Envía los trozos (chunks) al frontend para que el usuario lea en vivo.
@@ -89,7 +123,7 @@ export async function POST(req: Request) {
                     controller.close() // Cerramos el stream cuando OpenAI termina
 
                     // -----------------------------------------------------------------------
-                    // 6. PERSISTENCIA FINAL
+                    // 7. PERSISTENCIA FINAL
                     // -----------------------------------------------------------------------
                     // Una vez terminado, guardamos la respuesta completa.
                     if (fullResponse) {
