@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { GraduationCap, ArrowRight, BookOpen, MessageCircle, Sparkles } from "lucide-react";
+import { ArrowRight, BookOpen, MessageCircle, Sparkles } from "lucide-react";
 import { ThemeToggle } from "./components/ThemeToggle";
 
 export default function Home() {
@@ -9,8 +9,8 @@ export default function Home() {
       {/* HEADER */}
       <header className="px-6 h-16 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-50">
         <div className="flex items-center gap-2">
-          <div className="bg-blue-900 p-2 rounded-lg">
-            <GraduationCap className="w-6 h-6 text-white" />
+          <div className="bg-white p-1 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm">
+            <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain" />
           </div>
           <span className="text-xl font-bold text-slate-900 dark:text-white">Alvaro TutorAI</span>
         </div>

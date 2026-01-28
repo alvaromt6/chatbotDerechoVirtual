@@ -15,7 +15,10 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Alvaro TutorAI",
-  description: "Chatbot experimental construido con Next.js y Antigravity",
+  description: "Chatbot experimental construido con Next.js y Supabase",
+  icons: {
+    icon: "/logo.png",
+  },
 };
 
 export default function RootLayout({

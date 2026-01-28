@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/app/lib/supabase/client'
-import { GraduationCap, LogOut, Send, User, Mic, Square, Loader2, Menu } from 'lucide-react'
+import { LogOut, Send, User, Mic, Loader2, Menu } from 'lucide-react'
 import { signOut } from '@/app/lib/auth-actions'
 import { ThemeToggle } from '@/app/components/ThemeToggle'
 import ReactMarkdown from 'react-markdown'
@@ -26,11 +26,11 @@ interface Conversation {
     created_at: string
 }
 
+// PERSONALIZACIÓN: Preguntas sugeridas que aparecen al inicio de un nuevo chat
 const SUGGESTIONS = [
-    "¿Qué es el Habeas Corpus?",
-    "Diferencia entre culpa y dolo",
-    "Explícame el caso Marbury vs Madison",
-    "Estudiar con método Feynman"
+    "Concepto de responsabilidad limitada en sociedades mercantiles",
+    "Plazos de preaviso en despidos según Derecho Laboral",
+    "Diferencia entre capacidad jurídica y de obrar"
 ]
 
 /**
@@ -470,8 +470,8 @@ export default function ChatPage() {
                             <Menu className="w-6 h-6" />
                         </button>
 
-                        <div className="bg-blue-900 p-2 rounded-lg text-white">
-                            <GraduationCap className="w-5 h-5" />
+                        <div className="bg-white p-1 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                            <img src="/logo.png" alt="Logo" className="w-6 h-6 object-contain" />
                         </div>
                         <span className="font-bold text-slate-900 dark:text-white hidden sm:inline">Alvaro TutorAI</span>
                     </div>
