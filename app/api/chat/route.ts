@@ -145,12 +145,6 @@ export async function POST(req: Request) {
                             controller.enqueue(encoder.encode(content))
                         }
                     }
-                    controller.close() // Cerramos el stream cuando OpenAI termina
-
-                    // -----------------------------------------------------------------------
-                    // 7. PERSISTENCIA FINAL
-                    // -----------------------------------------------------------------------
-                    // Una vez terminado, guardamos la respuesta completa.
                     if (fullResponse) {
                         await supabase.from('messages').insert([
                             {
@@ -161,6 +155,7 @@ export async function POST(req: Request) {
                             },
                         ])
                     }
+                    controller.close() // Cerramos el stream SOLO DESPUÉS de guardar en BD!!!
                 } catch (err) {
                     controller.error(err)
                 }
