@@ -179,10 +179,18 @@ export async function searchVertexAI(query: string): Promise<string> {
  */
 export function buildVertexContext(text: string): string {
     return `
-📚 DOCUMENTACIÓN AUTORIZADA (Vertex AI Search):
---------------------------------------------
-${text}
---------------------------------------------
-Usa ESTA información como fuente prioritaria. Si mencionas artículos legales, ponlos en negrita.
-`
+        # CONTEXTO LEGAL AUTORIZADO (RAG)
+        **Fuente Prioritaria:** La siguiente información proviene de los manuales, bases de datos y legislación vigente oficial de la institución.
+
+        ---
+        ${text}
+        ---
+
+        ## INSTRUCCIONES CRÍTICAS DE USO:
+        1. **Uso Proactivo:** Utiliza esta información como la base técnica obligatoria para formular tus preguntas socráticas y retos prácticos. No esperes a que el alumno pregunte; genera interacción basada en estos datos.
+        2. **Prioridad Normativa:** Esta fuente prevalece sobre tu conocimiento general. Evita opiniones o interpretaciones personales del Derecho; cíñete a la base autorizada.
+        3. **Gestión de Lagunas Informativas:** Si la respuesta específica no se halla aquí, indica: "La información disponible en nuestras fuentes oficiales no detalla este punto concreto. Te invito a que investiguemos juntos en fuentes adicionales o profundicemos en la base doctrinal."
+        4. **Resaltado de Artículos:** Cita textualmente cualquier artículo legal identificado usando **negrita** para facilitar su localización.
+        5. **Redirección de Dominio:** Si el estudiante intenta desviar el tema hacia ámbitos ajenos al Derecho, redirige la conversación con: "Mi especialización se limita al marco legal institucional. Retomemos nuestra base técnica para analizar el siguiente punto jurídico."
+    `
 }
