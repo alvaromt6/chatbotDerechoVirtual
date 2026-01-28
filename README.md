@@ -2,11 +2,6 @@
 
 Una plataforma inteligente diseñada para ayudar a estudiantes de derecho a través de tutorías impulsadas por Inteligencia Artificial, utilizando técnicas avanzadas de **RAG (Retrieval-Augmented Generation)**.
 
-> [!TIP]
-> **Para Evaluadores:** Puedes consultar la [Documentación Técnica Detallada](file:///c:/Users/Alvaro/.gemini/antigravity/scratch/chatbot/DOCUMENTACION_TECNICA.md) para ver la justificación del stack, diagramas de arquitectura avanzados y detalles de implementación.
-
----
-
 ## 🏗️ Arquitectura del Sistema
 
 El proyecto sigue una arquitectura de **Next.js Fullstack** con una integración profunda de servicios de IA de Google Cloud y OpenAI.
@@ -133,31 +128,6 @@ El chatbot está diseñado para estudiantes de Derecho. No solo responde pregunt
 1.  Busca en los manuales autorizados vía **Vertex AI Search**.
 2.  Provee la base legal.
 3.  Guía al estudiante para que saque sus propias conclusiones.
-
----
-
-## 🔌 Documentación de la API
-
-### Endpoint: `POST /api/chat`
-Este es el motor principal del chatbot. Gestiona la autenticación, la recuperación de contexto (RAG) y la generación de respuestas en streaming.
-
-#### Configuración del Modelo
-> [!IMPORTANT]
-> El sistema utiliza el modelo **GPT-5.2 Optimizado** para Derecho. Este modelo ha sido configurado con una `temperature: 0.4` para garantizar que las respuestas sean precisas desde el punto de vista legal, evitando divagaciones innecesarias del LLM.
-
-#### Cuerpo de la Petición (JSON)
-| Parámetro | Tipo | Descripción |
-| :--- | :--- | :--- |
-| `message` | `string` | La consulta actual del estudiante. |
-| `history` | `array` | Historial de mensajes previos para mantener el contexto. |
-| `studentName` | `string` | Nombre del alumno para personalización (Socrático). |
-| `conversationId` | `string` | Identificador único de la sesión de chat. |
-
-#### Flujo de la Respuesta
-1.  **Búsqueda en Vertex AI**: Se analizan los fragmentos de manuales legales más relevantes.
-2.  **Inyección de Contexto**: Se añade el bloque `📚 DOCUMENTACIÓN AUTORIZADA` al prompt.
-3.  **Generación GPT-5.2**: Se produce una respuesta que sigue el método pedagógico configurado.
-4.  **Streaming**: La respuesta se envía al cliente en tiempo real mediante trozos (*chunks*) de texto.
 
 ---
 
