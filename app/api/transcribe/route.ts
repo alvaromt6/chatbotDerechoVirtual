@@ -21,7 +21,7 @@ export async function POST(req: Request) {
         if (!file) {
             return NextResponse.json({ error: 'No se encontró el archivo de audio' }, { status: 400 })
         }
-
+        /*
         // OpenAI espera un objeto File-like. 
         // Al venir de formData en Next.js App Router, 'file' ya es un File/Blob válido.
         const transcription = await openai.audio.transcriptions.create({
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
             model: 'gpt-4o-mini-transcribe',
             language: 'es', // Forzamos español para mejor precisión
         })
-        /*
+        */
         const transcription = await openai.audio.transcriptions.create({
             file,
             model: 'whisper-1',
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
             prompt: 'Transcribe solo lo que oigas. Si no se entiende no hagas nada',
             temperature: 0,
         })
-        */
+
 
         const text = transcription.text.trim()
 
